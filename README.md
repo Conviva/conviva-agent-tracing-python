@@ -26,4 +26,4 @@ the full API.
 
 It holds the published wheels only (`dist/`), not their source. Releases are
 published to PyPI from here by the **Publish** workflow when a GitHub release
-is created.
+is created; running the workflow by hand publishes to TestPyPI instead.
