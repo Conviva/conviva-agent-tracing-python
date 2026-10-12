@@ -1,0 +1,31 @@
+# Publishes the staged wheels in this repository to PyPI. Nothing is built
+# here: dist/ already holds each wheel exactly as it is published.
+#
+# Setup, once: on PyPI, add this repository as a trusted publisher of each of
+# conviva-otlp-exporter, conviva-agent-traces-connector and
+# conviva-agent-tracing, with workflow publish.yml and environment "pypi".
+# Before a project's first upload this is a "pending publisher".
+#
+# Versions already on PyPI are skipped, so re-running is safe.
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
