@@ -9,7 +9,7 @@ It is built on OpenTelemetry, so it works alongside any tracing you already
 have. This guide covers Python; a Node.js edition is available as
 `@convivainc/agent-tracing` on npm.
 
-**Contents**
+## Contents
 
 1. [Integration options](#1-integration-options)
 2. [Quick start — option 1, full SDK](#2-quick-start--option-1-full-sdk)
