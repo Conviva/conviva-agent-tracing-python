@@ -424,8 +424,51 @@ Other points:
 - Only allow-listed baggage (`c3.*` by default) is copied onto spans.
 - Your customer key is used only in the endpoint host name. It is never sent as
   a header or an attribute.
-- There is no automatic PII masking. Redact sensitive values before they reach
-  the model, or turn content off. See also [Limitations](#13-limitations).
+- The SDK does not detect or mask PII itself. To mask before data leaves your
+  process, pass a `mask` function to `init` (off by default), or turn content
+  off. See also [Limitations](#13-limitations).
+
+```python
+import re
+
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+
+# Called for each content attribute just before export. Return the new value,
+# or None to drop the attribute.
+init(mask=lambda m: EMAIL.sub("<email>", m.value) if isinstance(m.value, str) else m.value)
+```
+
+The hook is called with a `MaskInput` (`m.key`, `m.value`, `m.span`,
+`m.event`). It sees content attributes only, on the span and on its events
+(`gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.prompt.*`,
+`gen_ai.completion.*`, `traceloop.entity.input/output`,
+`traceloop.prompt.template_variables.*`, `traceloop.association.properties.*`,
+`exception.message`/`exception.stacktrace`, ...; the full list is in
+`sdks/contract/mask-contract.json`). `m.event` names the span event an
+attribute came from, and is `None` for span attributes. The hook is also called
+for the span's status description (key `otel.status_description`), which the
+SDK fills from the exception message. Conversation ids and the client sensor's
+`c3.client_id` / `c3.conv_id` are never passed to it.
+
+- **Synchronous and fast.** An `async` function is rejected by `init`. The hook
+  runs on the export thread; a slow one (a network call to a redaction
+  service) fills the batch queue, and spans are dropped once it is full.
+- **Fails closed.** If it raises or returns something that is not an attribute
+  value (str, bool, int, float or a sequence of one of those), that attribute
+  is dropped and the span still exports. A warning naming the attribute and the
+  exception type is logged at most once a minute; the message is never logged.
+- **Read-only.** Spans are not changed in place: a masked copy is exported, and
+  other exporters see the original.
+
+To mask content that other instrumentation records under different names
+(OpenInference's `input.value` / `output.value`, your own `app.payload.*`), add
+them with `mask_attributes`; an entry ending in `*` is a prefix. They are masked
+on top of the built-in keys, which are always masked; conversation ids and
+`c3.client_id` / `c3.conv_id` are still never passed to the hook.
+
+```python
+init(mask=mask, mask_attributes=["input.value", "output.value", "app.payload.*"])
+```
 
 ---
 
@@ -509,6 +552,8 @@ Then make sure the client sensor's header reaches your agent: §6.
 | `headers` | — | Extra export request headers |
 | `attributes` | — | Attributes added to every span |
 | `trace_content` | `True` | Record prompts, completions and payloads (§8) |
+| `mask` | — | Your function to mask PII in content attributes before export (§8) |
+| `mask_attributes` | — | Extra attribute names for `mask`, on top of the built-in content keys; `*` suffix = prefix (§8) |
 | `disable_batch` | `False` | Export each span as it ends; for scripts and debugging |
 | `span_processors` | — | Your own span processors, run after Conviva's |
 | `baggage_config` | `c3.*` | Which baggage entries are copied onto spans (§6) |
@@ -616,7 +661,7 @@ logging.basicConfig(level=logging.INFO)
 | **`shutdown()` only flushes.** Instrumentation stays installed; tracing cannot be restarted in the same process. | Treat tracing as process-lifetime. |
 | **Every span is exported**, including HTTP and database spans from other OpenTelemetry instrumentation in the process. | Use `block_instruments`, or §9 with your own filtering processor. |
 | **Content is on by default**, and the LangChain / LangGraph integration may record message content even with `CONVIVA_TRACE_CONTENT=false`. | Redact before the model call, and verify what your setup records (§12). |
-| **No automatic PII masking.** | Redact sensitive values in your code, or turn content off. |
+| **No automatic PII masking.** | Pass a `mask` function to `init` (§8), redact in your code, or turn content off. |
 | **Streaming token usage.** Some providers report usage on streamed responses only when asked (for example OpenAI's `stream_options={"include_usage": True}`). | Request usage on streamed calls. |
 | **No cost attribute.** Spans carry model and token counts, not prices. | Cost is derived from model and token usage. |
 | **Traces only.** No metrics or logs are sent to Conviva. | — |
